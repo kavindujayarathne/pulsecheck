@@ -1,0 +1,17 @@
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+
+.env
+.env.local
+
+frontend/build/
+postgres-data/
+
+.DS_Store
+.vscode/
+.idea/
+*.log
