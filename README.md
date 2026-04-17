@@ -55,6 +55,7 @@ docker compose up
 ├── api/                  # FastAPI backend
 ├── worker/               # Background health checker
 ├── frontend/             # React dashboard
+├── db/                   # Shared database models (used by api + worker)
 ├── helm/pulsecheck/      # Kubernetes Helm chart
 ├── docker-compose.yml    # Local development setup
 └── .env.example          # Environment variable template
