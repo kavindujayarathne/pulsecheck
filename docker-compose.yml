@@ -6,12 +6,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
-      - pulsecheck-net
+      - data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -22,10 +20,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: pulsecheck-redis
-    ports:
-      - "6379:6379"
     networks:
-      - pulsecheck-net
+      - data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -52,7 +48,8 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
       OAUTH_REDIRECT_BASE_URL: ${OAUTH_REDIRECT_BASE_URL}
     networks:
-      - pulsecheck-net
+      - web
+      - data
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,7 +74,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
     networks:
-      - pulsecheck-net
+      - data
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,7 +95,7 @@ services:
     environment:
       REACT_APP_API_URL: ${REACT_APP_API_URL}
     networks:
-      - pulsecheck-net
+      - web
     depends_on:
       api:
         condition: service_healthy
@@ -108,5 +105,7 @@ volumes:
   postgres-data:
 
 networks:
-  pulsecheck-net:
+  web:
+    driver: bridge
+  data:
     driver: bridge
