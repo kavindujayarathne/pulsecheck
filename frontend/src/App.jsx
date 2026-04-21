@@ -4,7 +4,7 @@ function App() {
   const [apiStatus, setApiStatus] = useState("checking...");
 
   useEffect(() => {
-    fetch(`${process.env.REACT_APP_API_URL}/api/health`)
+    fetch("/api/health")
       .then((res) => res.json())
       .then((data) => setApiStatus(data.status))
       .catch(() => setApiStatus("unreachable"));

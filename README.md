@@ -25,7 +25,7 @@ Frontend (React + Nginx)  -->  API (Python FastAPI)  -->  PostgreSQL
 | API        | Python FastAPI             | REST endpoints, auth, data serving         |
 | Worker     | Python                     | Pings endpoints, records results           |
 | PostgreSQL | postgres:16-alpine         | Stores services, checks, incidents, users  |
-| Redis      | redis:7-alpine             | Caches latest status, worker scheduling    |
+| Redis      | redis:7-alpine             | Caches latest status per service           |
 
 ## Prerequisites
 

@@ -48,6 +48,7 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
       OAUTH_REDIRECT_BASE_URL: ${OAUTH_REDIRECT_BASE_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
     networks:
       - web
       - data
@@ -94,8 +95,6 @@ services:
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public
-    environment:
-      REACT_APP_API_URL: ${REACT_APP_API_URL}
     networks:
       - web
     depends_on:
