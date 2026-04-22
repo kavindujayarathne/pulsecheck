@@ -5,6 +5,8 @@ from sqlalchemy import text
 
 from auth import router as auth_router
 from db.base import engine
+from incidents import router as incidents_router
+from services import router as services_router
 
 
 @asynccontextmanager
@@ -22,6 +24,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PulseCheck API", lifespan=lifespan)
 
 app.include_router(auth_router)
+app.include_router(services_router)
+app.include_router(incidents_router)
 
 
 @app.get("/api/health")
