@@ -55,13 +55,17 @@ def _clear_auth_cookies(response: RedirectResponse | dict) -> None:
     response.delete_cookie(key="refresh_token", path="/api/auth")
 
 
-def _get_or_create_user(db: Session, email: str, name: str, provider: str) -> User:
+def _get_or_create_user(db: Session, email: str, name: str, provider: str, avatar_url: str | None = None) -> User:
     user = db.query(User).filter(User.email == email, User.auth_provider == provider).first()
     if user is None:
-        user = User(email=email, name=name, auth_provider=provider)
+        user = User(email=email, name=name, auth_provider=provider, avatar_url=avatar_url)
         db.add(user)
         db.commit()
         db.refresh(user)
+    else:
+        if avatar_url and user.avatar_url != avatar_url:
+            user.avatar_url = avatar_url
+            db.commit()
     return user
 
 
@@ -116,8 +120,9 @@ async def github_callback(code: str, db: Session = Depends(get_db)):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not retrieve email from GitHub")
 
         name = user_data.get("name") or user_data.get("login", "Unknown")
+        avatar_url = user_data.get("avatar_url")
 
-    user = _get_or_create_user(db, email=email, name=name, provider="github")
+    user = _get_or_create_user(db, email=email, name=name, provider="github", avatar_url=avatar_url)
 
     response = RedirectResponse(url=FRONTEND_URL, status_code=302)
     _set_auth_cookies(response, str(user.id))
@@ -178,8 +183,9 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not retrieve email from Google")
 
         name = user_data.get("name", "Unknown")
+        avatar_url = user_data.get("picture")
 
-    user = _get_or_create_user(db, email=email, name=name, provider="google")
+    user = _get_or_create_user(db, email=email, name=name, provider="google", avatar_url=avatar_url)
 
     response = RedirectResponse(url=FRONTEND_URL, status_code=302)
     _set_auth_cookies(response, str(user.id))
@@ -229,4 +235,5 @@ def me(user: User = Depends(get_current_user)):
         "email": user.email,
         "name": user.name,
         "auth_provider": user.auth_provider,
+        "avatar_url": user.avatar_url,
     }

@@ -31,6 +31,17 @@ class ServiceUpdate(BaseModel):
     degraded_threshold_ms: int | None = None
 
 
+class CurrentStatus(BaseModel):
+    status: str | None = None
+    response_time: int | None = None
+    checked_at: datetime | None = None
+
+
+class DayUptime(BaseModel):
+    date: str
+    status: str
+
+
 class ServiceResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -42,6 +53,9 @@ class ServiceResponse(BaseModel):
     timeout_ms: int
     degraded_threshold_ms: int
     created_at: datetime
+    current_status: CurrentStatus = CurrentStatus()
+    uptime_24h: float | None = None
+    uptime_30d_bar: list[DayUptime] = []
 
     model_config = {"from_attributes": True}
 

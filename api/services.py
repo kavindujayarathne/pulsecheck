@@ -1,20 +1,27 @@
+import json
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import redis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from db import Check, Service, User, get_db
 from deps import get_current_user
 from schemas import (
     CheckResponse,
+    CurrentStatus,
+    DayUptime,
     ServiceCreate,
     ServiceDetailResponse,
     ServiceResponse,
     ServiceUpdate,
     UptimeStats,
 )
+
+redis_client = redis.from_url(os.environ["REDIS_URL"])
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
@@ -41,10 +48,59 @@ def _calculate_uptime(db: Session, service_id: uuid.UUID, since: datetime) -> fl
     return round((up / total) * 100, 2)
 
 
+def _get_current_status(service_id: uuid.UUID) -> CurrentStatus:
+    cached = redis_client.get(f"service:{service_id}:status")
+    if cached is None:
+        return CurrentStatus()
+    data = json.loads(cached)
+    return CurrentStatus(
+        status=data.get("status"),
+        response_time=data.get("response_time"),
+        checked_at=data.get("checked_at"),
+    )
+
+
+def _calculate_30d_bar(db: Session, service_id: uuid.UUID) -> list[DayUptime]:
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = (
+        db.query(
+            func.date(Check.checked_at).label("day"),
+            func.sum(case((Check.status == "down", 1), else_=0)).label("down_count"),
+            func.sum(case((Check.status == "degraded", 1), else_=0)).label("degraded_count"),
+        )
+        .filter(Check.service_id == service_id, Check.checked_at >= start)
+        .group_by(func.date(Check.checked_at))
+        .all()
+    )
+    day_map = {}
+    for row in rows:
+        day_str = str(row.day)
+        if row.down_count > 0:
+            day_map[day_str] = "down"
+        elif row.degraded_count > 0:
+            day_map[day_str] = "degraded"
+        else:
+            day_map[day_str] = "up"
+    result = []
+    for i in range(30):
+        day = (start + timedelta(days=i)).strftime("%Y-%m-%d")
+        result.append(DayUptime(date=day, status=day_map.get(day, "none")))
+    return result
+
+
 @router.get("", response_model=list[ServiceResponse])
 def list_services(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     services = db.query(Service).filter(Service.user_id == user.id).order_by(Service.created_at).all()
-    return services
+    now = datetime.now(timezone.utc)
+    result = []
+    for service in services:
+        data = ServiceResponse.model_validate(service).model_dump()
+        data["current_status"] = _get_current_status(service.id)
+        data["uptime_24h"] = _calculate_uptime(db, service.id, now - timedelta(hours=24))
+        data["uptime_30d_bar"] = _calculate_30d_bar(db, service.id)
+        result.append(data)
+    return result
 
 
 @router.post("", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED)
@@ -84,6 +140,7 @@ def get_service(
         uptime_30d=_calculate_uptime(db, service.id, now - timedelta(days=30)),
     )
     service_data = ServiceResponse.model_validate(service).model_dump()
+    service_data["current_status"] = _get_current_status(service.id)
     service_data["uptime"] = uptime
     return service_data
 
