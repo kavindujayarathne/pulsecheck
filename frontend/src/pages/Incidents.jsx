@@ -39,7 +39,7 @@ export default function Incidents() {
       <h1 className="text-xl font-bold text-white mb-6">Incidents</h1>
 
       {/* Filters */}
-      <div className="flex gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-6">
         <select
           value={filters.service_id}
           onChange={(e) =>
@@ -96,14 +96,14 @@ export default function Incidents() {
 
             return (
               <div key={incident.id} className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <StatusDot
                       status={
                         incident.type === "downtime" ? "down" : "degraded"
                       }
                     />
-                    <div>
+                    <div className="min-w-0">
                       <span className="text-sm font-medium text-white">
                         {serviceName(incident.service_id)}
                       </span>
@@ -113,7 +113,7 @@ export default function Incidents() {
                     </div>
                   </div>
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${
+                    className={`shrink-0 text-xs px-2 py-0.5 rounded-full ${
                       isOpen
                         ? "bg-danger-subtle text-danger"
                         : "bg-accent-subtle text-accent-light"
@@ -122,7 +122,7 @@ export default function Incidents() {
                     {isOpen ? "Open" : "Resolved"}
                   </span>
                 </div>
-                <div className="mt-2 text-xs text-muted flex gap-4">
+                <div className="mt-2 text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
                   <span>Started: {started.toLocaleString()}</span>
                   {resolved && (
                     <span>Resolved: {resolved.toLocaleString()}</span>
@@ -133,7 +133,9 @@ export default function Incidents() {
                       ? `${durationMin}m`
                       : `${Math.round(durationMin / 60)}h ${durationMin % 60}m`}
                   </span>
-                  <span>{incident.checks_failed} checks failed</span>
+                  <span>
+                    {incident.checks_failed} consecutive {incident.checks_failed === 1 ? "failure" : "failures"}
+                  </span>
                 </div>
               </div>
             );

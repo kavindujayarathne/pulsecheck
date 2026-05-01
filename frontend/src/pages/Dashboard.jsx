@@ -11,15 +11,27 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      api.get("/services"),
-      api.get("/incidents?limit=5"),
-    ])
-      .then(([servicesRes, incidentsRes]) => {
-        setServices(servicesRes.data);
-        setIncidents(incidentsRes.data);
-      })
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    const fetchAll = () =>
+      Promise.all([
+        api.get("/services"),
+        api.get("/incidents?limit=5"),
+      ])
+        .then(([servicesRes, incidentsRes]) => {
+          if (cancelled) return;
+          setServices(servicesRes.data);
+          setIncidents(incidentsRes.data);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+
+    fetchAll();
+    const interval = setInterval(fetchAll, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   if (loading) {
@@ -91,11 +103,11 @@ export default function Dashboard() {
       </div>
 
       {/* Overall Status */}
-      <div className="bg-panel border border-edge rounded-xl p-6 mb-7">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
+      <div className="bg-panel border border-edge rounded-xl p-4 sm:p-6 mb-7">
+        <div className="flex items-start sm:items-center justify-between gap-4 mb-4">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
+              className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-full flex items-center justify-center text-lg sm:text-xl ${
                 allUp
                   ? "bg-accent-subtle text-accent-light"
                   : "bg-warning-subtle text-warning"
@@ -103,9 +115,9 @@ export default function Dashboard() {
             >
               {allUp ? "\u2713" : "\u26A0"}
             </div>
-            <div>
+            <div className="min-w-0">
               <div
-                className={`text-lg font-semibold ${
+                className={`text-base sm:text-lg font-semibold ${
                   allUp ? "text-accent-light" : "text-warning"
                 }`}
               >
@@ -115,7 +127,7 @@ export default function Dashboard() {
                   ? "All Systems Operational"
                   : `${operational} of ${total} Services Operational`}
               </div>
-              <div className="text-[13px] text-dim mt-0.5">
+              <div className="text-[12px] sm:text-[13px] text-dim mt-0.5">
                 {total > 0 && (
                   <>
                     {degraded > 0 && `${degraded} degraded`}
@@ -129,11 +141,11 @@ export default function Dashboard() {
             </div>
           </div>
           {overallUptime && (
-            <div className="text-right">
-              <div className="text-2xl font-bold text-accent-light">
+            <div className="text-right shrink-0">
+              <div className="text-xl sm:text-2xl font-bold text-accent-light">
                 {overallUptime}%
               </div>
-              <div className="text-[11px] text-dim uppercase tracking-wider">
+              <div className="text-[10px] sm:text-[11px] text-dim uppercase tracking-wider">
                 Overall Uptime (24h)
               </div>
             </div>
@@ -207,7 +219,7 @@ export default function Dashboard() {
               return (
                 <div
                   key={incident.id}
-                  className="p-4 flex items-center gap-4"
+                  className="p-4 flex items-center gap-3 sm:gap-4"
                 >
                   <StatusDot
                     status={isOpen ? (incident.type === "downtime" ? "down" : "degraded") : "up"}
@@ -223,11 +235,11 @@ export default function Dashboard() {
                       </span>
                     </div>
                     <div className="text-xs text-dim mt-0.5">
-                      {incident.checks_failed} checks failed
+                      {incident.checks_failed} consecutive {incident.checks_failed === 1 ? "failure" : "failures"}
                     </div>
                   </div>
                   <span
-                    className={`text-[11px] font-semibold px-2 py-1 rounded ${
+                    className={`hidden sm:inline-block text-[11px] font-semibold px-2 py-1 rounded ${
                       incident.type === "downtime"
                         ? "bg-danger-subtle text-danger"
                         : "bg-warning-subtle text-warning"
@@ -235,7 +247,7 @@ export default function Dashboard() {
                   >
                     {incident.type === "downtime" ? "Downtime" : "Degraded"}
                   </span>
-                  <div className="text-right text-xs w-20">
+                  <div className="text-right text-xs w-16 sm:w-20 shrink-0">
                     <div className="font-medium text-muted">
                       {isOpen ? "Ongoing" : durationStr}
                     </div>

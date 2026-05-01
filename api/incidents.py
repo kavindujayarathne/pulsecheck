@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from db import Incident, Service, User, get_db
@@ -20,7 +21,7 @@ def list_incidents(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_service_ids = db.query(Service.id).filter(Service.user_id == user.id).subquery()
+    user_service_ids = select(Service.id).where(Service.user_id == user.id)
 
     query = db.query(Incident).filter(Incident.service_id.in_(user_service_ids))
 

@@ -16,5 +16,4 @@ export const COLORS = {
   body: "#e1e4e8",
   muted: "#8b949e",
   dim: "#64748b",
-  accent: "#4ade80",
 };

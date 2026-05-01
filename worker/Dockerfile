@@ -6,6 +6,7 @@ COPY worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY db/ ./db/
+COPY parsers/ ./parsers/
 COPY worker/ .
 
 ENV PYTHONUNBUFFERED=1

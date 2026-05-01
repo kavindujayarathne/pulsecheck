@@ -39,6 +39,7 @@ services:
     volumes:
       - ./api:/app
       - ./db:/app/db
+      - ./parsers:/app/parsers
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
@@ -73,6 +74,7 @@ services:
     volumes:
       - ./worker:/app
       - ./db:/app/db
+      - ./parsers:/app/parsers
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}

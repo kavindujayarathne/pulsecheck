@@ -2,7 +2,7 @@ import os
 
 import httpx
 from fastapi import APIRouter, Cookie, Depends, HTTPException, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from db import User, get_db
@@ -214,7 +214,6 @@ def refresh(refresh_token: str | None = Cookie(default=None), db: Session = Depe
 
     access = create_access_token(str(user.id))
     response = {"message": "Token refreshed"}
-    from fastapi.responses import JSONResponse
     resp = JSONResponse(content=response)
     resp.set_cookie(
         key="access_token",

@@ -8,6 +8,7 @@ COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY db/ ./db/
+COPY parsers/ ./parsers/
 COPY api/ .
 
 RUN chmod +x entrypoint.sh

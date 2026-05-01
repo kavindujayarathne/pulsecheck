@@ -24,18 +24,32 @@ export default function ServiceDetail() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      api.get(`/services/${id}`),
-      api.get(`/services/${id}/checks?limit=1000`),
-      api.get(`/incidents?service_id=${id}`),
-    ])
-      .then(([serviceRes, checksRes, incidentsRes]) => {
-        setService(serviceRes.data);
-        setChecks(checksRes.data);
-        setIncidents(incidentsRes.data);
-      })
-      .catch(() => navigate("/"))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    const fetchAll = () =>
+      Promise.all([
+        api.get(`/services/${id}`),
+        api.get(`/services/${id}/checks?limit=1000`),
+        api.get(`/incidents?service_id=${id}`),
+      ])
+        .then(([serviceRes, checksRes, incidentsRes]) => {
+          if (cancelled) return;
+          setService(serviceRes.data);
+          setChecks(checksRes.data);
+          setIncidents(incidentsRes.data);
+        })
+        .catch(() => {
+          if (!cancelled) navigate("/");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+
+    fetchAll();
+    const interval = setInterval(fetchAll, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [id, navigate]);
 
   if (loading || !service) {
@@ -46,6 +60,7 @@ export default function ServiceDetail() {
 
   const status = service.current_status?.status || "unknown";
   const latency = service.current_status?.response_time;
+  const isStatusPage = service.monitor_type === "status_page";
 
   const now = new Date();
   const rangeHours = timeRange === "24h" ? 24 : timeRange === "7d" ? 168 : 720;
@@ -72,15 +87,20 @@ export default function ServiceDetail() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3 min-w-0">
           <StatusDot status={status} className="w-4 h-4" />
-          <h1 className="text-xl font-bold text-white">{service.name}</h1>
-          {latency != null && (
-            <span className="text-sm text-muted">{latency}ms</span>
+          <h1 className="text-xl font-bold text-white truncate">{service.name}</h1>
+          {!isStatusPage && latency != null && (
+            <span className="text-sm text-muted shrink-0">{latency}ms</span>
+          )}
+          {isStatusPage && service.component_name && (
+            <span className="text-sm text-muted truncate">
+              {service.component_name}
+            </span>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {service.status_page_url && (
             <SafeLink
               href={service.status_page_url}
@@ -104,8 +124,60 @@ export default function ServiceDetail() {
         </div>
       </div>
 
+      {service.active_incident && (
+        <div className="bg-danger/[0.06] border border-danger/40 rounded-lg p-4 mb-6">
+          <div className="text-xs uppercase tracking-wider text-danger mb-1">
+            Active incident {service.active_incident.impact && `· ${service.active_incident.impact}`}
+          </div>
+          <div className="text-sm text-white font-medium">
+            {service.active_incident.name}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-muted">
+            {service.active_incident.started_at && (
+              <span>
+                Started{" "}
+                {new Date(service.active_incident.started_at).toLocaleString()}
+              </span>
+            )}
+            {service.active_incident.url && (
+              <SafeLink
+                href={service.active_incident.url}
+                className="text-accent-light hover:underline"
+              >
+                Provider details &#8599;
+              </SafeLink>
+            )}
+          </div>
+        </div>
+      )}
+
+      {service.active_maintenance && (
+        <div className="bg-warning/[0.06] border border-warning/40 rounded-lg p-4 mb-6">
+          <div className="text-xs uppercase tracking-wider text-warning mb-1">
+            Scheduled maintenance · {service.active_maintenance.status}
+          </div>
+          <div className="text-sm text-white font-medium">
+            {service.active_maintenance.name}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-muted">
+            {service.active_maintenance.scheduled_for && (
+              <span>
+                From{" "}
+                {new Date(service.active_maintenance.scheduled_for).toLocaleString()}
+              </span>
+            )}
+            {service.active_maintenance.scheduled_until && (
+              <span>
+                Until{" "}
+                {new Date(service.active_maintenance.scheduled_until).toLocaleString()}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Uptime Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
         {[
           { label: "24h", value: service.uptime?.uptime_24h },
           { label: "7d", value: service.uptime?.uptime_7d },
@@ -125,7 +197,8 @@ export default function ServiceDetail() {
         ))}
       </div>
 
-      {/* Response Time Chart */}
+      {/* Response Time Chart — hidden for status page monitors (no per-check latency) */}
+      {!isStatusPage && (
       <div className="bg-panel border border-edge rounded-lg p-4 mb-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-medium text-white">Response Time</h2>
@@ -187,6 +260,7 @@ export default function ServiceDetail() {
           </div>
         )}
       </div>
+      )}
 
       {/* Incident History */}
       <div className="bg-panel border border-edge rounded-lg">
@@ -196,14 +270,15 @@ export default function ServiceDetail() {
         {incidents.length === 0 ? (
           <div className="p-4 text-sm text-muted">No incidents</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[500px]">
             <thead>
               <tr className="text-muted text-left text-xs">
                 <th className="px-4 py-2 font-medium">Type</th>
                 <th className="px-4 py-2 font-medium">Started</th>
                 <th className="px-4 py-2 font-medium">Resolved</th>
                 <th className="px-4 py-2 font-medium">Duration</th>
-                <th className="px-4 py-2 font-medium">Checks Failed</th>
+                <th className="px-4 py-2 font-medium">Failures</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-edge">
@@ -244,6 +319,7 @@ export default function ServiceDetail() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
