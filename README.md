@@ -37,26 +37,34 @@ Frontend (React + Nginx)  -->  API (Python FastAPI)  -->  PostgreSQL
 ```bash
 cp .env.example .env
 # Edit .env with your values (OAuth credentials, etc.)
+
+# Development (hot reload, ports 3000 and 8000 exposed)
 docker compose up
+
+# Production stack locally (Nginx on port 80, api reachable only via Nginx proxy)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up
 ```
 
-## Services
+## Services (development)
 
-| Service  | URL                    |
-|----------|------------------------|
-| Frontend | http://localhost:3000   |
-| API      | http://localhost:8000   |
+| Service  | URL                        |
+|----------|----------------------------|
+| Frontend | http://localhost:3000      |
+| API      | http://localhost:8000      |
 | API Docs | http://localhost:8000/docs |
+
+In production mode, only the frontend is published (port 80). All `/api/` traffic is proxied to the api container internally by Nginx.
 
 ## Project Structure
 
 ```
 .
-├── api/                  # FastAPI backend
-├── worker/               # Background health checker
-├── frontend/             # React dashboard
-├── db/                   # Shared database models (used by api + worker)
-├── helm/pulsecheck/      # Kubernetes Helm chart
-├── docker-compose.yml    # Local development setup
-└── .env.example          # Environment variable template
+├── api/                      # FastAPI backend
+├── worker/                   # Background health checker
+├── frontend/                 # React dashboard (Vite dev / Nginx prod)
+├── db/                       # Shared SQLAlchemy models (used by api + worker)
+├── parsers/                  # Status page parsers (used by api + worker)
+├── docker-compose.yml        # Development stack
+├── docker-compose.prod.yml   # Production override (target: prod, ports trimmed)
+└── .env.example              # Environment variable template
 ```
