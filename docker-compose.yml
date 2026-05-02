@@ -33,6 +33,7 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
+      target: dev
     container_name: pulsecheck-api
     ports:
       - "8000:8000"
@@ -70,6 +71,7 @@ services:
     build:
       context: .
       dockerfile: worker/Dockerfile
+      target: dev
     container_name: pulsecheck-worker
     volumes:
       - ./worker:/app
@@ -91,6 +93,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: dev
     container_name: pulsecheck-frontend
     ports:
       - "3000:3000"

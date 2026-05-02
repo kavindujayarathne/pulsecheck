@@ -1,0 +1,24 @@
+services:
+  api:
+    build:
+      target: prod
+    ports: !reset []
+    volumes: !reset []
+
+  worker:
+    build:
+      target: prod
+    volumes: !reset []
+
+  frontend:
+    build:
+      target: prod
+    ports: !override
+      - "80:80"
+    volumes: !reset []
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
