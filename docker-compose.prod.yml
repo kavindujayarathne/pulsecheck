@@ -14,10 +14,10 @@ services:
     build:
       target: prod
     ports: !override
-      - "80:80"
+      - "80:8080"
     volumes: !reset []
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3

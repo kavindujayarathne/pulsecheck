@@ -1,0 +1,19 @@
+spec:
+  template:
+    spec:
+      # Drop the control-plane toleration so CoreDNS no longer schedules there.
+      tolerations: []
+
+      # Pin to app workers only (not control-plane, not edge).
+      nodeSelector:
+        role: app
+
+      # Spread the two replicas across different app workers so a single
+      # node failure cannot take out cluster DNS.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+              topologyKey: kubernetes.io/hostname

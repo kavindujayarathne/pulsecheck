@@ -1,0 +1,239 @@
+{{/*
+NetworkPolicies enforce the same trust model as Docker Compose:
+  frontend ↔ api          via ingress
+  api ↔ postgres + redis  data plane only
+  worker ↔ postgres + redis + external egress (for monitoring pings)
+  frontend cannot reach postgres or redis
+  postgres and redis are not reachable from outside the cluster
+
+Strategy: a namespace-scoped default-deny policy denies all ingress and
+egress for every pod in the release namespace, and per-component policies
+layer the specific allow rules on top. DNS egress is allowed for all pods
+(cluster service discovery would not function otherwise).
+*/}}
+
+# Default-deny: every pod in this namespace starts with no inbound or
+# outbound traffic. Subsequent policies grant the minimum required.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pulsecheck.fullname" . }}-default-deny
+  labels:
+    {{- include "pulsecheck.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Allow cluster DNS egress for every pod. Without this, service-name
+# resolution (postgres, redis, api, frontend) breaks under default-deny.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pulsecheck.fullname" . }}-allow-dns
+  labels:
+    {{- include "pulsecheck.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# Frontend: nginx serving the SPA. Receives traffic from ingress-nginx,
+# proxies /api/* upstream to the api Service.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pulsecheck.fullname" . }}-frontend
+  labels:
+    {{- include "pulsecheck.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "pulsecheck.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "pulsecheck.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports:
+        - port: 8000
+          protocol: TCP
+---
+# API: REST endpoints. Accepts traffic from the frontend pods and directly
+# from ingress-nginx (the Ingress resource routes /api/* to the api Service).
+# Talks to postgres and redis.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pulsecheck.fullname" . }}-api
+  labels:
+    {{- include "pulsecheck.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "pulsecheck.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "pulsecheck.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: frontend
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8000
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "pulsecheck.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "pulsecheck.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# Worker: background process that pings external URLs. Talks to postgres
+# and redis, and needs HTTP/HTTPS egress to monitor target services.
+# Receives no traffic from anywhere (no Ingress allow rules).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pulsecheck.fullname" . }}-worker
+  labels:
+    {{- include "pulsecheck.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "pulsecheck.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "pulsecheck.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "pulsecheck.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    # Outbound HTTP/HTTPS to the public internet so the worker can fetch
+    # status pages and ping monitored URLs. Private/cluster CIDRs are
+    # excluded so the worker cannot bypass NetworkPolicy by hitting
+    # cluster IPs directly.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+---
+# Postgres: only accepts traffic from api and worker. No egress beyond DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pulsecheck.fullname" . }}-postgres
+  labels:
+    {{- include "pulsecheck.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "pulsecheck.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [api, worker]
+            matchLabels:
+              {{- include "pulsecheck.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Redis: only accepts traffic from api and worker. No egress beyond DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pulsecheck.fullname" . }}-redis
+  labels:
+    {{- include "pulsecheck.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "pulsecheck.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [api, worker]
+            matchLabels:
+              {{- include "pulsecheck.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 6379
+          protocol: TCP

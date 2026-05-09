@@ -6,22 +6,26 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Dev stage — used by docker-compose.yml with source mounts for hot reload
 FROM python:3.12-slim AS dev
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH \
+RUN useradd --create-home --uid 1000 app
+COPY --from=builder --chown=app:app /root/.local /home/app/.local
+ENV PATH=/home/app/.local/bin:$PATH \
     PYTHONUNBUFFERED=1
 WORKDIR /app
-COPY db/ ./db/
-COPY parsers/ ./parsers/
-COPY worker/ .
+COPY --chown=app:app db/ ./db/
+COPY --chown=app:app parsers/ ./parsers/
+COPY --chown=app:app worker/ .
+USER app
 CMD ["python", "main.py"]
 
 # Prod stage — same runtime, immutable image
 FROM python:3.12-slim AS prod
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH \
+RUN useradd --create-home --uid 1000 app
+COPY --from=builder --chown=app:app /root/.local /home/app/.local
+ENV PATH=/home/app/.local/bin:$PATH \
     PYTHONUNBUFFERED=1
 WORKDIR /app
-COPY db/ ./db/
-COPY parsers/ ./parsers/
-COPY worker/ .
+COPY --chown=app:app db/ ./db/
+COPY --chown=app:app parsers/ ./parsers/
+COPY --chown=app:app worker/ .
+USER app
 CMD ["python", "main.py"]

@@ -1,0 +1,39 @@
+controller:
+  replicaCount: 1
+
+  # Bind host ports 80/443 on the node so Kind's extraPortMappings
+  # forward 127.0.0.1:80/443 on the Mac straight to the controller.
+  hostPort:
+    enabled: true
+
+  # Pin the controller pod to the dedicated edge worker.
+  nodeSelector:
+    ingress-ready: "true"
+
+  # Tolerate the edge taint so this pod (and only this pod) lands on worker3.
+  tolerations:
+    - key: role
+      operator: Equal
+      value: edge
+      effect: NoSchedule
+
+  # hostPort makes the controller reachable directly via the node IP, so we
+  # don't need a NodePort or LoadBalancer service.
+  service:
+    type: ClusterIP
+
+  # No need for a default backend; our Ingress rules cover all routes.
+  ingressClassResource:
+    name: nginx
+    enabled: true
+    default: true
+
+  watchIngressWithoutClass: false
+
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+
+defaultBackend:
+  enabled: false

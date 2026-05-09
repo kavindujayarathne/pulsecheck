@@ -1,0 +1,97 @@
+image:
+  pullPolicy: IfNotPresent
+
+frontend:
+  image:
+    repository: pulsecheck-frontend
+    tag: "0.1.0"
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+api:
+  image:
+    repository: pulsecheck-api
+    tag: "0.1.0"
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+worker:
+  image:
+    repository: pulsecheck-worker
+    tag: "0.1.0"
+  replicas: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+postgres:
+  image:
+    repository: postgres
+    tag: 16-alpine
+  service:
+    port: 5432
+  storage:
+    size: 1Gi
+  auth:
+    username: pulsecheck
+    database: pulsecheck
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+redis:
+  image:
+    repository: redis
+    tag: 7-alpine
+  service:
+    port: 6379
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+ingress:
+  enabled: true
+  className: nginx
+  host: pulsecheck.local
+
+env:
+  oauthRedirectBaseUrl: http://pulsecheck.local
+  frontendUrl: http://pulsecheck.local
+
+secrets:
+  postgresPassword: ""
+  secretKey: ""
+  googleClientId: ""
+  googleClientSecret: ""
+  githubClientId: ""
+  githubClientSecret: ""
