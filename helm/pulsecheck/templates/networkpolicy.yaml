@@ -132,6 +132,19 @@ spec:
       ports:
         - port: 6379
           protocol: TCP
+    # Outbound HTTPS to the public internet for OAuth token exchange and
+    # user-info fetches (GitHub, Google). Private/cluster CIDRs excluded
+    # so the api cannot bypass NetworkPolicy by hitting cluster IPs.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
 ---
 # Worker: background process that pings external URLs. Talks to postgres
 # and redis, and needs HTTP/HTTPS egress to monitor target services.
