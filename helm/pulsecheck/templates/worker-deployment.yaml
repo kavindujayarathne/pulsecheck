@@ -23,10 +23,49 @@ spec:
         runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -U {{ .Values.postgres.auth.username }} -d {{ .Values.postgres.auth.database }} -q; do
+                echo "Waiting for postgres..."
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+        - name: wait-for-redis
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              until redis-cli -h redis ping > /dev/null 2>&1; do
+                echo "Waiting for redis..."
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
       containers:
         - name: worker
           image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "pulsecheck.fullname" . }}-config
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -38,8 +77,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "pulsecheck.fullname" . }}-secrets
                   key: REDIS_URL
-            - name: FRONTEND_URL
-              value: {{ .Values.env.frontendUrl | quote }}
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
           securityContext:
@@ -47,6 +84,24 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - '[ $(( $(date +%s) - $(stat -c %Y /tmp/healthy 2>/dev/null || echo 0) )) -lt 60 ]'
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 2
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - '[ $(( $(date +%s) - $(stat -c %Y /tmp/healthy 2>/dev/null || echo 0) )) -lt 30 ]'
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
           volumeMounts:
             - name: tmp
               mountPath: /tmp

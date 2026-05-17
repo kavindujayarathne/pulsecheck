@@ -3,6 +3,7 @@ import os
 import time
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 import redis
@@ -17,6 +18,7 @@ from parsers.utils import decode_api_urls
 REDIS_URL = os.environ["REDIS_URL"]
 TICK_INTERVAL = 10  # seconds between scheduler ticks
 STATUS_PAGE_FETCH_INTERVAL = 60  # seconds between fetches per unique status page URL set
+HEARTBEAT_FILE = Path("/tmp/healthy")
 
 redis_client = redis.from_url(REDIS_URL)
 
@@ -371,12 +373,14 @@ def main():
     print("PulseCheck worker started")
     verify_db()
     verify_redis()
+    HEARTBEAT_FILE.touch()
 
     while True:
         try:
             tick()
         except Exception as e:
             print(f"ERROR in tick: {e}")
+        HEARTBEAT_FILE.touch()
         time.sleep(TICK_INTERVAL)
 
 

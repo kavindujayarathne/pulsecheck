@@ -6,7 +6,9 @@ metadata:
     {{- include "pulsecheck.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
+  {{- if not .Values.api.autoscaling.enabled }}
   replicas: {{ .Values.api.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "pulsecheck.selectorLabels" . | nindent 6 }}
@@ -23,6 +25,42 @@ spec:
         runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -U {{ .Values.postgres.auth.username }} -d {{ .Values.postgres.auth.database }} -q; do
+                echo "Waiting for postgres..."
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+        - name: wait-for-redis
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              until redis-cli -h redis ping > /dev/null 2>&1; do
+                echo "Waiting for redis..."
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
       containers:
         - name: api
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
@@ -32,11 +70,8 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "pulsecheck.fullname" . }}-secrets
-          env:
-            - name: OAUTH_REDIRECT_BASE_URL
-              value: {{ .Values.env.oauthRedirectBaseUrl | quote }}
-            - name: FRONTEND_URL
-              value: {{ .Values.env.frontendUrl | quote }}
+            - configMapRef:
+                name: {{ include "pulsecheck.fullname" . }}-config
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
           securityContext:
