@@ -1,0 +1,36 @@
+# Local-prod overrides for k3d (single-node K3s in Docker).
+# Layered on top of values-production.yaml:
+#   helm upgrade --install pulsecheck . \
+#     -f values-production.yaml \
+#     -f values-production-local.yaml \
+#     -f values-secrets-production-local.yaml
+#
+# Overrides: image refs to locally-built tags (no GHCR pull), host reachable
+# via /etc/hosts on 127.0.0.1:8080, HTTP-only (no Let's Encrypt locally).
+
+frontend:
+  image:
+    repository: pulsecheck-frontend
+    tag: "REPLACED_AT_DEPLOY"
+
+api:
+  image:
+    repository: pulsecheck-api
+    tag: "REPLACED_AT_DEPLOY"
+
+worker:
+  image:
+    repository: pulsecheck-worker
+    tag: "REPLACED_AT_DEPLOY"
+
+ingress:
+  enabled: true
+  className: nginx
+  host: pulsecheck.kavindujayarathne.io
+  # No cert-manager annotation, no TLS — local k3d cannot reach Let's Encrypt.
+  annotations: {}
+  tls: []
+
+env:
+  oauthRedirectBaseUrl: http://pulsecheck.kavindujayarathne.io:8080
+  frontendUrl: http://pulsecheck.kavindujayarathne.io:8080

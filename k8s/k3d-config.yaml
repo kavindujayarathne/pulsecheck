@@ -1,0 +1,20 @@
+# k3d cluster config for the local-prod testing layer.
+# Single-node K3s in Docker, bound to 127.0.0.1:8080 (HTTP only). Coexists
+# with the kind cluster (which binds 127.0.0.1:80).
+
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: pulsecheck-prod
+servers: 1
+agents: 0
+options:
+  k3s:
+    extraArgs:
+      - arg: --disable=traefik
+        nodeFilters:
+          - server:*
+ports:
+  - port: 127.0.0.1:8080:80
+    nodeFilters:
+      - loadbalancer

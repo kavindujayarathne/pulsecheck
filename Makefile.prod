@@ -1,0 +1,199 @@
+# PulseCheck production Makefile
+#
+# Usage:
+#   make -f Makefile.prod help
+
+SHELL := /bin/bash
+
+# Registry and image names
+REGISTRY        := ghcr.io/kavindujayarathne
+FRONTEND_IMAGE  := $(REGISTRY)/pulsecheck-frontend
+API_IMAGE       := $(REGISTRY)/pulsecheck-api
+WORKER_IMAGE    := $(REGISTRY)/pulsecheck-worker
+
+# Versioning: appVersion from Chart.yaml (human-readable), SHA from git (immutable)
+VERSION         := $(shell awk '/^appVersion:/ {gsub(/"/, "", $$2); print $$2}' helm/pulsecheck/Chart.yaml)
+GIT_SHA         := $(shell git rev-parse --short=12 HEAD)
+SHA_TAG         := sha-$(GIT_SHA)
+
+# Deploy config
+APP_NAMESPACE   := pulsecheck
+CHART_DIR       := helm/pulsecheck
+VALUES_PROD     := $(CHART_DIR)/values-production.yaml
+SECRETS_PROD    := $(CHART_DIR)/values-secrets-production.yaml
+
+# Bootstrap config (one-time cluster infrastructure)
+INGRESS_NGINX_VALUES := helm/ingress-nginx/values-production.yaml
+CERT_MANAGER_VALUES  := helm/cert-manager/values.yaml
+CLUSTER_ISSUERS      := k8s/cert-manager/clusterissuer.yaml
+
+# Local-prod (k3d single-node K3s) config
+LOCAL_PROD_CLUSTER  := pulsecheck-prod
+LOCAL_PROD_NS       := pulsecheck
+K3D_CONFIG          := k8s/k3d-config.yaml
+LOCAL_PROD_VALUES   := $(CHART_DIR)/values-production-local.yaml
+LOCAL_PROD_SECRETS  := $(CHART_DIR)/values-secrets-production-local.yaml
+LOCAL_PROD_IMAGES   := pulsecheck-frontend:$(VERSION) pulsecheck-api:$(VERSION) pulsecheck-worker:$(VERSION)
+
+.DEFAULT_GOAL := help
+.PHONY: help check-prereqs check-secrets check-git-clean check-k3d check-local-prod-secrets print-tags \
+        build-images push-images release \
+        bootstrap-prod deploy-prod rollback-prod logs-prod \
+        local-prod-up local-prod-down local-prod-deploy local-prod-build local-prod-load
+
+## help: List available targets
+help:
+	@echo "PulseCheck production targets:"
+	@echo ""
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed -e 's/## /  /'
+	@echo ""
+	@echo "Current version: $(VERSION)"
+	@echo "Current SHA tag: $(SHA_TAG)"
+
+## print-tags: Show the tags that would be applied to this build
+print-tags:
+	@echo "Semver tag: $(VERSION)"
+	@echo "SHA tag:    $(SHA_TAG)"
+	@echo "Frontend:   $(FRONTEND_IMAGE):{$(VERSION),$(SHA_TAG)}"
+	@echo "API:        $(API_IMAGE):{$(VERSION),$(SHA_TAG)}"
+	@echo "Worker:     $(WORKER_IMAGE):{$(VERSION),$(SHA_TAG)}"
+
+check-prereqs:
+	@for cmd in docker helm kubectl git; do \
+	  command -v $$cmd >/dev/null || { echo "ERROR: $$cmd not found in PATH"; exit 1; }; \
+	done
+	@docker info >/dev/null 2>&1 || { echo "ERROR: Docker daemon is not running"; exit 1; }
+
+check-secrets:
+	@test -f $(SECRETS_PROD) || { echo "ERROR: $(SECRETS_PROD) missing (copy values-secrets.example.yaml and fill in production secrets)"; exit 1; }
+
+check-git-clean:
+	@test -z "$$(git status --porcelain)" || { echo "ERROR: working tree dirty. Commit or stash before tagging a release."; exit 1; }
+
+## build-images: Build prod images for linux/amd64 (VPS arch), dual-tagged with semver and git SHA
+build-images: check-prereqs
+	@echo "==> Building frontend (linux/amd64)"
+	docker build --target prod --platform linux/amd64 -t $(FRONTEND_IMAGE):$(VERSION) -t $(FRONTEND_IMAGE):$(SHA_TAG) ./frontend
+	@echo "==> Building api (linux/amd64)"
+	docker build --target prod --platform linux/amd64 -f api/Dockerfile -t $(API_IMAGE):$(VERSION) -t $(API_IMAGE):$(SHA_TAG) .
+	@echo "==> Building worker (linux/amd64)"
+	docker build --target prod --platform linux/amd64 -f worker/Dockerfile -t $(WORKER_IMAGE):$(VERSION) -t $(WORKER_IMAGE):$(SHA_TAG) .
+
+## push-images: Push both semver and SHA tags to GHCR (requires `docker login ghcr.io`)
+push-images:
+	@echo "==> Pushing $(FRONTEND_IMAGE) ($(VERSION), $(SHA_TAG))"
+	docker push $(FRONTEND_IMAGE):$(VERSION)
+	docker push $(FRONTEND_IMAGE):$(SHA_TAG)
+	@echo "==> Pushing $(API_IMAGE) ($(VERSION), $(SHA_TAG))"
+	docker push $(API_IMAGE):$(VERSION)
+	docker push $(API_IMAGE):$(SHA_TAG)
+	@echo "==> Pushing $(WORKER_IMAGE) ($(VERSION), $(SHA_TAG))"
+	docker push $(WORKER_IMAGE):$(VERSION)
+	docker push $(WORKER_IMAGE):$(SHA_TAG)
+
+## release: Build and push a new release (semver + SHA). Refuses on dirty tree.
+release: check-git-clean build-images push-images
+	@echo ""
+	@echo "==> Released $(VERSION) ($(SHA_TAG))"
+	@echo "    Pin production to: $(SHA_TAG)"
+
+## bootstrap-prod: One-time cluster bootstrap on VPS K3s (ingress-nginx + cert-manager + ClusterIssuers).
+##                 Idempotent — safe to re-run; will upgrade in place if already installed.
+bootstrap-prod:
+	@echo "==> Adding Helm repos"
+	helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx >/dev/null 2>&1 || true
+	helm repo add jetstack https://charts.jetstack.io >/dev/null 2>&1 || true
+	helm repo update >/dev/null
+	@echo "==> Installing ingress-nginx (Cloudflare IP trust + hostPort 80/443)"
+	helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+	  --namespace ingress-nginx --create-namespace \
+	  -f $(INGRESS_NGINX_VALUES) \
+	  --wait --timeout 5m
+	@echo "==> Installing cert-manager"
+	helm upgrade --install cert-manager jetstack/cert-manager \
+	  --namespace cert-manager --create-namespace \
+	  -f $(CERT_MANAGER_VALUES) \
+	  --wait --timeout 5m
+	@echo "==> Applying ClusterIssuers (Let's Encrypt staging + prod)"
+	kubectl apply -f $(CLUSTER_ISSUERS)
+	@echo ""
+	@echo "==> Bootstrap complete. Run 'make -f Makefile.prod deploy-prod' to deploy pulsecheck."
+
+## deploy-prod: Helm upgrade production with current SHA pinned (requires KUBECONFIG pointed at VPS)
+deploy-prod: check-secrets
+	@echo "==> Deploying $(SHA_TAG) to production"
+	helm upgrade --install pulsecheck $(CHART_DIR) \
+	  --namespace $(APP_NAMESPACE) --create-namespace \
+	  -f $(VALUES_PROD) -f $(SECRETS_PROD) \
+	  --set frontend.image.tag=$(SHA_TAG) \
+	  --set api.image.tag=$(SHA_TAG) \
+	  --set worker.image.tag=$(SHA_TAG) \
+	  --wait --timeout 5m
+
+## rollback-prod: Roll back to the previous Helm revision
+rollback-prod:
+	helm rollback pulsecheck --namespace $(APP_NAMESPACE)
+
+## logs-prod: Tail logs from all app pods
+logs-prod:
+	kubectl logs -n $(APP_NAMESPACE) -l app.kubernetes.io/instance=pulsecheck --tail=200 -f
+
+check-k3d:
+	@command -v k3d >/dev/null || { echo "ERROR: k3d not found. Install: brew install k3d"; exit 1; }
+
+check-local-prod-secrets:
+	@test -f $(LOCAL_PROD_SECRETS) || { echo "ERROR: $(LOCAL_PROD_SECRETS) missing (copy values-secrets.example.yaml and fill in local-prod values)"; exit 1; }
+
+## local-prod-build: Build prod-target images locally with the current VERSION tag
+local-prod-build: check-prereqs
+	@echo "==> Building frontend"
+	docker build --target prod -t pulsecheck-frontend:$(VERSION) ./frontend
+	@echo "==> Building api"
+	docker build --target prod -f api/Dockerfile -t pulsecheck-api:$(VERSION) .
+	@echo "==> Building worker"
+	docker build --target prod -f worker/Dockerfile -t pulsecheck-worker:$(VERSION) .
+
+## local-prod-load: Import the locally-built images into the k3d cluster
+local-prod-load: check-k3d
+	k3d image import $(LOCAL_PROD_IMAGES) -c $(LOCAL_PROD_CLUSTER)
+
+## local-prod-up: Create k3d cluster, install ingress-nginx, build+load images, helm install the chart
+local-prod-up: check-prereqs check-k3d check-local-prod-secrets
+	@echo "==> Creating k3d cluster '$(LOCAL_PROD_CLUSTER)' (bound to 127.0.0.1:8080/8443)"
+	k3d cluster create --config $(K3D_CONFIG)
+	@echo "==> Installing ingress-nginx"
+	helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx >/dev/null 2>&1 || true
+	helm repo update >/dev/null
+	helm install ingress-nginx ingress-nginx/ingress-nginx \
+	  --namespace ingress-nginx --create-namespace --wait --timeout 3m
+	$(MAKE) -f Makefile.prod local-prod-build
+	$(MAKE) -f Makefile.prod local-prod-load
+	@echo "==> Installing pulsecheck chart"
+	kubectl create namespace $(LOCAL_PROD_NS) --dry-run=client -o yaml | kubectl apply -f -
+	helm upgrade --install pulsecheck $(CHART_DIR) \
+	  --namespace $(LOCAL_PROD_NS) \
+	  -f $(VALUES_PROD) -f $(LOCAL_PROD_VALUES) -f $(LOCAL_PROD_SECRETS) \
+	  --set frontend.image.tag=$(VERSION) \
+	  --set api.image.tag=$(VERSION) \
+	  --set worker.image.tag=$(VERSION) \
+	  --wait --timeout 5m
+	@echo ""
+	@echo "==> Local-prod cluster up. App reachable at http://pulsecheck.kavindujayarathne.io:8080"
+	@echo "    (add to /etc/hosts: 127.0.0.1 pulsecheck.kavindujayarathne.io)"
+
+## local-prod-deploy: Helm upgrade only (use after chart or values changes; assumes cluster exists)
+local-prod-deploy: check-local-prod-secrets
+	$(MAKE) -f Makefile.prod local-prod-build
+	$(MAKE) -f Makefile.prod local-prod-load
+	helm upgrade --install pulsecheck $(CHART_DIR) \
+	  --namespace $(LOCAL_PROD_NS) \
+	  -f $(VALUES_PROD) -f $(LOCAL_PROD_VALUES) -f $(LOCAL_PROD_SECRETS) \
+	  --set frontend.image.tag=$(VERSION) \
+	  --set api.image.tag=$(VERSION) \
+	  --set worker.image.tag=$(VERSION) \
+	  --wait --timeout 5m
+	kubectl rollout restart -n $(LOCAL_PROD_NS) deployment/pulsecheck-frontend deployment/pulsecheck-api deployment/pulsecheck-worker
+
+## local-prod-down: Destroy the k3d cluster and all its state
+local-prod-down: check-k3d
+	k3d cluster delete $(LOCAL_PROD_CLUSTER)

@@ -19,6 +19,7 @@ CMD ["python", "main.py"]
 
 # Prod stage — same runtime, immutable image
 FROM python:3.12-slim AS prod
+LABEL org.opencontainers.image.source=https://github.com/kavindujayarathne/pulsecheck
 RUN useradd --create-home --uid 1000 app
 COPY --from=builder --chown=app:app /root/.local /home/app/.local
 ENV PATH=/home/app/.local/bin:$PATH \

@@ -1,9 +1,15 @@
+# Standalone production values for K3s on the VPS.
+# Install:
+#   helm upgrade --install pulsecheck . \
+#     -f values-production.yaml \
+#     -f values-secrets-production.yaml
+
 image:
   pullPolicy: IfNotPresent
 
 frontend:
   image:
-    repository: pulsecheck-frontend
+    repository: ghcr.io/kavindujayarathne/pulsecheck-frontend
     tag: "REPLACED_AT_DEPLOY"
   replicas: 1
   service:
@@ -19,7 +25,7 @@ frontend:
 
 api:
   image:
-    repository: pulsecheck-api
+    repository: ghcr.io/kavindujayarathne/pulsecheck-api
     tag: "REPLACED_AT_DEPLOY"
   replicas: 1
   service:
@@ -32,15 +38,16 @@ api:
     limits:
       cpu: 500m
       memory: 512Mi
+  # HPA disabled on single-node K3s. Revisit if VPS gains nodes or worker is split.
   autoscaling:
-    enabled: true
+    enabled: false
     minReplicas: 1
     maxReplicas: 3
     targetCPUUtilizationPercentage: 70
 
 worker:
   image:
-    repository: pulsecheck-worker
+    repository: ghcr.io/kavindujayarathne/pulsecheck-worker
     tag: "REPLACED_AT_DEPLOY"
   replicas: 1
   resources:
@@ -59,6 +66,7 @@ postgres:
     port: 5432
   storage:
     size: 1Gi
+    storageClassName: local-path
   auth:
     username: pulsecheck
     database: pulsecheck
@@ -87,11 +95,17 @@ redis:
 ingress:
   enabled: true
   className: nginx
-  host: pulsecheck.com
+  host: pulsecheck.kavindujayarathne.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    - hosts:
+        - pulsecheck.kavindujayarathne.com
+      secretName: pulsecheck-tls
 
 env:
-  oauthRedirectBaseUrl: http://pulsecheck.com
-  frontendUrl: http://pulsecheck.com
+  oauthRedirectBaseUrl: https://pulsecheck.kavindujayarathne.com
+  frontendUrl: https://pulsecheck.kavindujayarathne.com
 
 secrets:
   postgresPassword: ""

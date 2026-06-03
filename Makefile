@@ -7,12 +7,12 @@ CLUSTER_NAME    := pulsecheck
 APP_NAMESPACE   := pulsecheck
 INGRESS_NS      := ingress-nginx
 KIND_CONFIG     := k8s/kind-config.yaml
-INGRESS_VALUES  := k8s/ingress-nginx-values.yaml
+INGRESS_VALUES  := helm/ingress-nginx/values-kind.yaml
 COREDNS_PATCH   := k8s/coredns-patch.yaml
 CHART_DIR       := helm/pulsecheck
 SECRETS_FILE    := helm/pulsecheck/values-secrets.yaml
 
-IMAGE_TAG       := 0.1.0
+IMAGE_TAG       := $(shell awk '/^appVersion:/ {gsub(/"/, "", $$2); print $$2}' $(CHART_DIR)/Chart.yaml)
 FRONTEND_IMAGE  := pulsecheck-frontend:$(IMAGE_TAG)
 API_IMAGE       := pulsecheck-api:$(IMAGE_TAG)
 WORKER_IMAGE    := pulsecheck-worker:$(IMAGE_TAG)
@@ -56,10 +56,14 @@ cluster-up: check-prereqs check-secrets
 	kubectl create namespace $(APP_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install pulsecheck $(CHART_DIR) \
 	  --namespace $(APP_NAMESPACE) \
-	  -f $(SECRETS_FILE) --wait --timeout 5m
+	  -f $(SECRETS_FILE) \
+	  --set frontend.image.tag=$(IMAGE_TAG) \
+	  --set api.image.tag=$(IMAGE_TAG) \
+	  --set worker.image.tag=$(IMAGE_TAG) \
+	  --wait --timeout 5m
 	@echo ""
-	@echo "==> Cluster is up. App reachable at http://pulsecheck.local"
-	@echo "    (add to /etc/hosts: 127.0.0.1 pulsecheck.local)"
+	@echo "==> Cluster is up. App reachable at http://pulsecheck.com"
+	@echo "    (add to /etc/hosts: 127.0.0.1 pulsecheck.com)"
 
 ## cluster-down: Destroy the Kind cluster and all its state
 cluster-down:
@@ -93,7 +97,11 @@ load-images:
 deploy: check-secrets
 	helm upgrade --install pulsecheck $(CHART_DIR) \
 	  --namespace $(APP_NAMESPACE) \
-	  -f $(SECRETS_FILE) --wait --timeout 5m
+	  -f $(SECRETS_FILE) \
+	  --set frontend.image.tag=$(IMAGE_TAG) \
+	  --set api.image.tag=$(IMAGE_TAG) \
+	  --set worker.image.tag=$(IMAGE_TAG) \
+	  --wait --timeout 5m
 
 ## redeploy: Rebuild images, reload into Kind, and roll the app deployments
 redeploy: build-images load-images

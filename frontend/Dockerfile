@@ -17,6 +17,7 @@ RUN npm run build
 
 # Prod stage — Nginx (unprivileged, runs as non-root on port 8080) serving static files
 FROM nginxinc/nginx-unprivileged:alpine AS prod
+LABEL org.opencontainers.image.source=https://github.com/kavindujayarathne/pulsecheck
 USER root
 RUN apk add --no-cache curl
 USER nginx

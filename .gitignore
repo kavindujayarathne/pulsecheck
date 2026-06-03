@@ -8,7 +8,8 @@ __pycache__/
 .env
 .env.local
 
-helm/pulsecheck/values-secrets.yaml
+helm/pulsecheck/values-secrets*.yaml
+!helm/pulsecheck/values-secrets.example.yaml
 
 frontend/build/
 postgres-data/
