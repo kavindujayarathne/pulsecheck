@@ -1,7 +1,17 @@
 # PulseCheck
 
+![PulseCheck](./assets/pulsecheck.png)
+
 A self-hosted, multi-user service monitoring dashboard. PulseCheck monitors services either by actively pinging HTTP endpoints (measuring uptime, response time, and incidents at configurable intervals) or by parsing public status pages to read component status, incidents, and scheduled maintenances that the service publishes itself. Each user gets their own dashboard with services organized by custom categories.
 
+On the other hand, PulseCheck is a reference environment.
+
+> [!NOTE]
+> "reference environment" - a stable, real deployment that I keep using as the foundation for
+> ongoing experimentation. Not a project with a finish line. Not a sandbox that I throw away. A
+> persistent, real environment that doubles as a lab.
+
+To read more, refer to the [journal](http://kavindujayarathne.com/blogs/pulsecheck-journal).
 
 ## Usage
 
